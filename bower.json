@@ -20,6 +20,7 @@
     "purescript-canvas": "^0.5.2",
     "purescript-refs": "^0.2.0",
     "purescript-integers": "^0.2.1",
-    "purescript-timers": "^1.0.0"
+    "purescript-timers": "^1.0.0",
+    "purescript-colors": "^0.4.3"
   }
 }
