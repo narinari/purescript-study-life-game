@@ -11,7 +11,7 @@ import Control.Bind (join)
 import Control.Plus (empty)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE, log)
-import DOM.Event.EventTarget
+-- import DOM.Event.EventTarget
 import DOM.Timer (Timer, delay)
 import Graphics.Canvas
 import Color
