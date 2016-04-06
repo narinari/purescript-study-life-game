@@ -22,6 +22,7 @@
     "purescript-integers": "^0.2.1",
     "purescript-timers": "^1.0.0",
     "purescript-colors": "^0.4.3",
-    "purescript-dom": "^0.2.19"
+    "purescript-dom": "^0.2.19",
+    "purescript-nullable": "^0.2.1"
   }
 }
