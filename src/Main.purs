@@ -110,7 +110,7 @@ startLoop state _ = do
                 runGraphics ctx $ do
                   clearRect {x: 0.0, y: 0.0, w: dimensions.width, h: dimensions.height}
                   drawCells cellRect size field
-                flip runContT (requestAnimationFrame <<< loop (age + 1)) $
+                flip runContT (requestAnimationFrame <<< requestAnimationFrame <<< loop (age + 1)) $
                   runParallel $ fold <$> (for ranges (inParallel <<< pure <<< next size field))
       loop 0 initialField
     startLoop' _ = pure unit
