@@ -24,6 +24,8 @@
     "purescript-colors": "^0.4.3",
     "purescript-dom": "^0.2.19",
     "purescript-nullable": "^0.2.1",
-    "purescript-parallel": "^0.5.1"
+    "purescript-parallel": "^0.5.1",
+    "purescript-free-canvas": "^0.4.1",
+    "purescript-requestanimationframe": "^1.0.0"
   }
 }
