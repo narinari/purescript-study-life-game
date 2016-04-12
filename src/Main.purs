@@ -23,7 +23,8 @@ import DOM.HTML.Window (document)
 import DOM.Node.NonElementParentNode (getElementById)
 import DOM.Node.Types (ElementId(..), elementToEventTarget)
 import DOM.Timer (Timer, delay)
-import Graphics.Canvas
+import Graphics.Canvas as C
+import Graphics.Canvas.Free
 import Color (toHexString, rgb)
 import LifeGame (Game, Field, next)
 
@@ -61,27 +62,27 @@ gliderGun = [
   ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
   ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]]
 
-main :: forall e. Eff (console :: CONSOLE, canvas :: Canvas, timer :: Timer, dom :: DOM | e) Unit
+main :: forall e. Eff (console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
 main = do
   document <- window >>= document
   Just startButton <- toMaybe <$> getElementById (ElementId "start") (htmlDocumentToNonElementParentNode document)
   addEventListener click (eventListener startLoop) true (elementToEventTarget startButton)
 
-startLoop :: forall e. Event -> Eff (console :: CONSOLE, canvas :: Canvas, timer :: Timer | e) Unit
+startLoop :: forall e. Event -> Eff (console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
 startLoop _ = do
-  Just canvas <- getCanvasElementById "canvas"
-  ctx <- getContext2D canvas
-  canvasHeight <- getCanvasHeight canvas
-  canvasWidth <- getCanvasWidth canvas
+  Just canvas <- C.getCanvasElementById "canvas"
+  ctx <- C.getContext2D canvas
+  dimensions <- C.getCanvasDimensions canvas
   let initialGame = createGame $ concat [gliderGun, gliderGun]
       cellSize = max (toNumber $ initialGame.h) (toNumber initialGame.w)
-      cellRect = {x: 0.0, y: 0.0, w: canvasWidth / cellSize, h: canvasHeight / cellSize}
+      cellRect = {x: 0.0, y: 0.0, w: dimensions.width / cellSize, h: dimensions.height / cellSize}
       ranges = chunks 2 $ 0..(initialGame.h - 1)
       loop age game
         | age == 0 = pure unit
         | otherwise = do
-            clearRect ctx {x: 0.0, y: 0.0, w: canvasWidth, h: canvasHeight}
-            drawCells ctx cellRect game
+            runGraphics ctx $ do
+              clearRect {x: 0.0, y: 0.0, w: dimensions.width, h: dimensions.height}
+              drawCells cellRect game
             flip runContT (\f -> void $ delay 20 (loop (age - 1)) $ game {field = f}) $
               runParallel $ fold <$> (for ranges (inParallel <<< pure <<< next game))
   loop 500 initialGame
@@ -90,16 +91,16 @@ startLoop _ = do
                         w: fromMaybe 0 $ length <$> head base,
                         field: base}
 
-drawCells :: forall e. Context2D -> Rectangle -> Game -> Eff (canvas :: Canvas | e) Unit
-drawCells ctx cellRect game =
-sequence_ $ join $ zipWith (\row cols -> zipWith (draw row) (0..game.w) cols) (0..game.h) game.field
+drawCells :: forall e. C.Rectangle -> Game -> Graphics Unit
+drawCells  cellRect game =
+  sequence_ $ join $ zipWith (\row cols -> zipWith (draw row) (0..game.w) cols) (0..game.h) game.field
   where
     draw row col target
       | target == 0 = pure unit
-      | otherwise = void $ do
-        newCtx <- color ctx target
-        fillPath newCtx $ rect newCtx $ cellRect {x = (toNumber col) * cellRect.w, y = toNumber row * cellRect.h}
-    color ctx age = (rgb (255 - age) age 140 # toHexString) `setFillStyle` ctx
+      | otherwise = do
+        color target
+        void $ fillRect $ cellRect {x = (toNumber col) * cellRect.w, y = toNumber row * cellRect.h}
+    color age = rgb (255 - age) age 140 # toHexString # setFillStyle
 
 chunks :: forall a. Int -> Array a -> Array (Array a)
 chunks 0 arr = []
