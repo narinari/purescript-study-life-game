@@ -22,6 +22,7 @@ import DOM.HTML.Types (htmlDocumentToNonElementParentNode)
 import DOM.HTML.Window (document)
 import DOM.Node.NonElementParentNode (getElementById)
 import DOM.Node.Types (ElementId(..), elementToEventTarget)
+import DOM.RequestAnimationFrame (requestAnimationFrame)
 import DOM.Timer (Timer, delay)
 import Graphics.Canvas as C
 import Graphics.Canvas.Free
@@ -83,7 +84,7 @@ startLoop _ = do
             runGraphics ctx $ do
               clearRect {x: 0.0, y: 0.0, w: dimensions.width, h: dimensions.height}
               drawCells cellRect game
-            flip runContT (\f -> void $ delay 20 (loop (age - 1)) $ game {field = f}) $
+            flip runContT (\f -> requestAnimationFrame $ loop (age - 1) $ game {field = f}) $
               runParallel $ fold <$> (for ranges (inParallel <<< pure <<< next game))
   loop 500 initialGame
   where
