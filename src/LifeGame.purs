@@ -1,5 +1,5 @@
 module LifeGame (
-  Game
+  FieldSize
   , Field
   , Cell
   , next
@@ -14,12 +14,12 @@ import Control.Plus (empty)
 
 type Cell = Int
 type Field = Array (Array Cell)
-type Game = { w :: Int, h :: Int, field :: Field }
+type FieldSize = { width :: Int, height :: Int }
 
-next :: Game -> Array Int -> Field
-next prev range = fromMaybe [] $
-  zipWith (\row cols -> zipWith (rule row) (0..(prev.w - 1)) cols) range <$>
-  (slice <$> head range <*> ((+1) <$> last range) <*> pure prev.field)
+next :: FieldSize -> Field -> Array Int -> Field
+next {width: w, height: h} prev range = fromMaybe [] $
+  zipWith (\row cols -> zipWith (rule row) (0..(w - 1)) cols) range <$>
+  (slice <$> head range <*> ((+1) <$> last range) <*> pure prev)
   where
     rule y x target =
       if target == 0 then
@@ -27,8 +27,8 @@ next prev range = fromMaybe [] $
       else
         if aroundLives == 2 || aroundLives == 3 then min (target + 1) 255 else 0 
       where
-        aroundLives = sum $ catMaybes $ cell <$> aroundCells x y prev.w prev.h
-        cell (Tuple x' y') = prev.field !! y' >>= (!! x')
+        aroundLives = sum $ catMaybes $ cell <$> aroundCells x y w h
+        cell (Tuple x' y') = prev !! y' >>= (!! x')
           >>= \n -> return $ case n of
             0 -> 0
             _ -> 1
