@@ -20,10 +20,10 @@ import DOM.Event.EventTarget (eventListener, addEventListener)
 import DOM.Event.EventTypes (click)
 import DOM.Event.Types (Event)
 import DOM.HTML (window)
-import DOM.HTML.Types (htmlDocumentToNonElementParentNode)
+import DOM.HTML.Types (htmlDocumentToParentNode)
 import DOM.HTML.Window (document)
-import DOM.Node.NonElementParentNode (getElementById)
-import DOM.Node.Types (ElementId(..), elementToEventTarget)
+import DOM.Node.ParentNode (querySelector)
+import DOM.Node.Types (Element(..), ElementId(..), elementToEventTarget)
 import DOM.RequestAnimationFrame (requestAnimationFrame)
 import DOM.Timer (Timer, delay)
 import Graphics.Canvas as C
@@ -31,8 +31,8 @@ import Graphics.Canvas.Free
 import Color (toHexString, rgb)
 import LifeGame (FieldSize, Field, next)
 
-data RunState = Pause | Running | Stopping
-type GameState = { state :: RunState }
+data TimeState = Pause | Running | Stopping
+type GameState = { timeState :: TimeState, generationNode :: Maybe Element}
  
 gliderGun :: Field
 gliderGun = [
@@ -70,22 +70,23 @@ gliderGun = [
 
 main :: forall e h. Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
 main = do
-  document <- window >>= document
-  startButton <- toMaybe <$> getElementById (ElementId "start") (htmlDocumentToNonElementParentNode document)
-  stopButton <- toMaybe <$> getElementById (ElementId "stop") (htmlDocumentToNonElementParentNode document)
+  document <- htmlDocumentToParentNode <$> (window >>= document)
+  startButton <- toMaybe <$> querySelector "#start" document
+  stopButton <- toMaybe <$> querySelector "#stop" document
+  genNode <- toMaybe <$> querySelector "#generation" document
   state <- newSTRef Pause
   
   maybe (pure unit) (addEventListener click (eventListener $ startLoop state) true <<< elementToEventTarget) startButton
   maybe (pure unit) (addEventListener click (eventListener $ stopLoop state) true <<< elementToEventTarget) stopButton
 
-stopLoop :: forall e h. STRef h RunState -> Event -> Eff (st :: ST h | e) Unit
+stopLoop :: forall e h. STRef h TimeState -> Event -> Eff (st :: ST h | e) Unit
 stopLoop state _ = do
   s <- readSTRef state
   case s of
     Running -> void $ writeSTRef state Stopping
     _ -> pure unit
 
-startLoop :: forall e h. STRef h RunState -> Event -> Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
+startLoop :: forall e h. STRef h TimeState -> Event -> Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
 startLoop state _ = do
   s <- readSTRef state
   startLoop' s
