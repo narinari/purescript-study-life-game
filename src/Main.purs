@@ -2,11 +2,11 @@ module Main where
 
 import Prelude
 import Math (max)
-import Data.Array ((..), (:), zipWith, head, length, concat, take, drop)
+import Data.Array ((..), (:), zipWith, head, length, concat, take, drop, replicate)
 import Data.Int (toNumber)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Traversable (for)
-import Data.Foldable (sequence_, fold)
+import Data.Foldable (sequence_, fold, foldl)
 import Data.Nullable (toMaybe)
 import Control.Apply ((<*))
 import Control.Bind (join)
@@ -37,46 +37,48 @@ import LifeGame.Data (gliderGun)
 import DOMUtil
 
 data TimeState = Pause | Running | Stopping
-type GameState = { startButton:: Maybe Element
+type GameState = { timeState :: TimeState
+                 , stepRate :: Int
+                 , startButton:: Maybe Element
                  , stopButton :: Maybe Element
                  , generationScore :: Maybe Element}
  
 main :: forall e h. Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
 main = do
   document <- htmlDocumentToParentNode <$> (window >>= document)
-  gameNodes <- {startButton:_, stopButton:_, generationScore:_ }
+  gameNodes <- {timeState: Pause, stepRate: 5, startButton:_, stopButton:_, generationScore:_ }
                 <$> (toMaybe <$> querySelector "#start" document)
                 <*> (toMaybe <$> querySelector "#stop" document)
                 <*> (toMaybe <$> querySelector "#generation" document)
-  state <- newSTRef Pause
+  state <- newSTRef gameNodes
   
   maybe (pure unit) (setAttribute "disabled" "true") gameNodes.stopButton
   
-  registerListener click (startLoop gameNodes state) gameNodes.startButton
-  registerListener click (stopLoop gameNodes state) gameNodes.stopButton
+  registerListener click (startLoop state) gameNodes.startButton
+  registerListener click (stopLoop state) gameNodes.stopButton
   
   where
     registerListener event listener = maybe (pure unit) (addEventListener event (eventListener listener) true <<< elementToEventTarget) 
 
-stopLoop :: forall e h. GameState -> STRef h TimeState -> Event -> Eff (st :: ST h, dom :: DOM | e) Unit
-stopLoop gameState state _ = do
-  s <- readSTRef state
-  case s of
+stopLoop :: forall e h. STRef h GameState -> Event -> Eff (st :: ST h, dom :: DOM | e) Unit
+stopLoop state _ = do
+  gameState <- readSTRef state
+  case gameState.timeState of
     Running -> void $ do
-      writeSTRef state Stopping
+      modifySTRef state \g -> g { timeState=Stopping }
       maybe (pure unit) (removeAttribute "disabled") gameState.startButton
       maybe (pure unit) (setAttribute "disabled" "true") gameState.stopButton
     _ -> pure unit
 
-startLoop :: forall e h. GameState -> STRef h TimeState -> Event -> Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, dom :: DOM | e) Unit
-startLoop gameState state _ = do
-  s <- readSTRef state
-  startLoop' s
+startLoop :: forall e h. STRef h GameState -> Event -> Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, dom :: DOM | e) Unit
+startLoop state _ = do
+  gameState <- readSTRef state
+  startLoop' gameState.timeState gameState
   where
-    startLoop' Pause = do
-      writeSTRef state Running
-      maybe (pure unit) (setAttribute "disabled" "true") gameState.startButton
-      maybe (pure unit) (removeAttribute "disabled") gameState.stopButton
+    startLoop' Pause gs = do
+      modifySTRef state \g -> g { timeState=Running }
+      maybe (pure unit) (setAttribute "disabled" "true") gs.startButton
+      maybe (pure unit) (removeAttribute "disabled") gs.stopButton
       Just canvas <- C.getCanvasElementById "canvas"
       ctx <- C.getContext2D canvas
       dimensions <- C.getCanvasDimensions canvas
@@ -88,18 +90,18 @@ startLoop gameState state _ = do
           ranges = chunks 2 $ 0..(size.height - 1)
           loop age field = do
             s <- readSTRef state
-            loop' s
+            loop' s.timeState
             where
-              loop' Stopping = void $ writeSTRef state Pause
+              loop' Stopping = void $ modifySTRef state \g -> g { timeState=Pause }
               loop' Running = do
-                maybe (pure unit) (setTextContent (show age ++ " Generation") <<< elementToNode) gameState.generationScore
+                maybe (pure unit) (setTextContent (show age ++ " Generation") <<< elementToNode) gs.generationScore
                 runGraphics ctx $ do
                   clearRect {x: 0.0, y: 0.0, w: dimensions.width, h: dimensions.height}
                   drawCells cellRect size field
-                flip runContT (requestAnimationFrame <<< requestAnimationFrame <<< loop (age + 1)) $
+                flip runContT ((foldl (<<<) requestAnimationFrame $ replicate gs.stepRate requestAnimationFrame) <<< loop (age + 1)) $
                   runParallel $ fold <$> (for ranges (inParallel <<< pure <<< next size field))
       loop 0 initialField
-    startLoop' _ = pure unit
+    startLoop' _ _ = pure unit
 
 drawCells :: forall e. C.Rectangle -> FieldSize -> Field -> Graphics Unit
 drawCells  cellRect size field =
