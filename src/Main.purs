@@ -24,8 +24,9 @@ import DOM.HTML (window)
 import DOM.HTML.Types (htmlDocumentToParentNode)
 import DOM.HTML.Window (document)
 import DOM.Node.Element (setAttribute)
+import DOM.Node.Node (setTextContent)
 import DOM.Node.ParentNode (querySelector)
-import DOM.Node.Types (Element(..), ElementId(..), elementToEventTarget)
+import DOM.Node.Types (Element(..), ElementId(..), elementToEventTarget, elementToNode)
 import DOM.RequestAnimationFrame (requestAnimationFrame)
 import DOM.Timer (Timer, delay)
 import Graphics.Canvas as C
@@ -124,6 +125,7 @@ startLoop gameState state _ = do
             where
               loop' Stopping = void $ writeSTRef state Pause
               loop' Running = do
+                maybe (pure unit) (setTextContent (show age ++ " Genration") <<< elementToNode) gameState.generationScore
                 runGraphics ctx $ do
                   clearRect {x: 0.0, y: 0.0, w: dimensions.width, h: dimensions.height}
                   drawCells cellRect size field
