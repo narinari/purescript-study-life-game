@@ -8,6 +8,7 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Traversable (for)
 import Data.Foldable (sequence_, fold)
 import Data.Nullable (toMaybe)
+import Control.Apply ((<*))
 import Control.Bind (join)
 import Control.Monad (when)
 import Control.Monad.Eff (Eff)
@@ -22,77 +23,60 @@ import DOM.Event.Types (Event)
 import DOM.HTML (window)
 import DOM.HTML.Types (htmlDocumentToParentNode)
 import DOM.HTML.Window (document)
+import DOM.Node.Element (setAttribute)
+import DOM.Node.Node (setTextContent)
 import DOM.Node.ParentNode (querySelector)
-import DOM.Node.Types (Element(..), ElementId(..), elementToEventTarget)
+import DOM.Node.Types (Element(..), ElementId(..), elementToEventTarget, elementToNode)
 import DOM.RequestAnimationFrame (requestAnimationFrame)
 import DOM.Timer (Timer, delay)
 import Graphics.Canvas as C
 import Graphics.Canvas.Free
 import Color (toHexString, rgb)
 import LifeGame (FieldSize, Field, next)
+import LifeGame.Data (gliderGun)
+import DOMUtil
 
 data TimeState = Pause | Running | Stopping
-type GameState = { timeState :: TimeState, generationNode :: Maybe Element}
+type GameState = { startButton:: Maybe Element
+                 , stopButton :: Maybe Element
+                 , generationScore :: Maybe Element}
  
-gliderGun :: Field
-gliderGun = [
-   [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,1,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0]
-  ,[0,1,1,0,0,0,0,0,0,0,0,1,0,0,0,1,0,1,1,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,1,1,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,1,1,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,1,1,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,1,0,0,1,0,1,1,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,1,1,1,1,0,1,1,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,0,0,0,1,0,0,1,0,1,1,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,1,1,1,1,1,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-  ,[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]]
-
 main :: forall e h. Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
 main = do
   document <- htmlDocumentToParentNode <$> (window >>= document)
-  startButton <- toMaybe <$> querySelector "#start" document
-  stopButton <- toMaybe <$> querySelector "#stop" document
-  genNode <- toMaybe <$> querySelector "#generation" document
+  gameNodes <- {startButton:_, stopButton:_, generationScore:_ }
+                <$> (toMaybe <$> querySelector "#start" document)
+                <*> (toMaybe <$> querySelector "#stop" document)
+                <*> (toMaybe <$> querySelector "#generation" document)
   state <- newSTRef Pause
   
-  maybe (pure unit) (addEventListener click (eventListener $ startLoop state) true <<< elementToEventTarget) startButton
-  maybe (pure unit) (addEventListener click (eventListener $ stopLoop state) true <<< elementToEventTarget) stopButton
+  maybe (pure unit) (setAttribute "disabled" "true") gameNodes.stopButton
+  
+  registerListener click (startLoop gameNodes state) gameNodes.startButton
+  registerListener click (stopLoop gameNodes state) gameNodes.stopButton
+  
+  where
+    registerListener event listener = maybe (pure unit) (addEventListener event (eventListener listener) true <<< elementToEventTarget) 
 
-stopLoop :: forall e h. STRef h TimeState -> Event -> Eff (st :: ST h | e) Unit
-stopLoop state _ = do
+stopLoop :: forall e h. GameState -> STRef h TimeState -> Event -> Eff (st :: ST h, dom :: DOM | e) Unit
+stopLoop gameState state _ = do
   s <- readSTRef state
   case s of
-    Running -> void $ writeSTRef state Stopping
+    Running -> void $ do
+      writeSTRef state Stopping
+      maybe (pure unit) (removeAttribute "disabled") gameState.startButton
+      maybe (pure unit) (setAttribute "disabled" "true") gameState.stopButton
     _ -> pure unit
 
-startLoop :: forall e h. STRef h TimeState -> Event -> Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
-startLoop state _ = do
+startLoop :: forall e h. GameState -> STRef h TimeState -> Event -> Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, dom :: DOM | e) Unit
+startLoop gameState state _ = do
   s <- readSTRef state
   startLoop' s
   where
     startLoop' Pause = do
       writeSTRef state Running
+      maybe (pure unit) (setAttribute "disabled" "true") gameState.startButton
+      maybe (pure unit) (removeAttribute "disabled") gameState.stopButton
       Just canvas <- C.getCanvasElementById "canvas"
       ctx <- C.getContext2D canvas
       dimensions <- C.getCanvasDimensions canvas
@@ -108,6 +92,7 @@ startLoop state _ = do
             where
               loop' Stopping = void $ writeSTRef state Pause
               loop' Running = do
+                maybe (pure unit) (setTextContent (show age ++ " Generation") <<< elementToNode) gameState.generationScore
                 runGraphics ctx $ do
                   clearRect {x: 0.0, y: 0.0, w: dimensions.width, h: dimensions.height}
                   drawCells cellRect size field
