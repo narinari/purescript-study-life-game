@@ -1,16 +1,21 @@
 module DOMUtil where
 
-import Prelude (Unit(), pure, unit, (<<<))
+import Prelude (Unit(), (<<<))
 
 import Control.Monad.Eff (Eff())
 
-import Data.Maybe (Maybe, maybe)
-
 import DOM
+import DOM.Node.Element (setAttribute)
 import DOM.Node.Node (setTextContent)
 import DOM.Node.Types
 
 foreign import removeAttribute :: forall eff. String -> Element -> Eff (dom :: DOM | eff) Unit
 
-setText :: forall e. String -> Maybe Element -> Eff (dom::DOM | e) Unit
-setText text = maybe (pure unit) (setTextContent text <<< elementToNode)
+setText :: forall eff. String -> Element -> Eff (dom::DOM | eff) Unit
+setText text = setTextContent text <<< elementToNode
+
+disableElement :: forall eff. Element -> Eff (dom :: DOM | eff) Unit
+disableElement = setAttribute "disabled" "true"
+
+enableElement :: forall eff. Element -> Eff (dom :: DOM | eff) Unit
+enableElement = removeAttribute "disabled" 

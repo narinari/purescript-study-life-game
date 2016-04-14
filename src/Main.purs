@@ -4,17 +4,15 @@ import Prelude
 import Math (max)
 import Data.Array ((..), (:), zipWith, head, length, concat, take, drop, replicate)
 import Data.Int (toNumber)
-import Data.Maybe (Maybe(..), fromMaybe, maybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Traversable (for)
 import Data.Foldable (sequence_, fold, foldl)
 import Data.Nullable (toMaybe)
-import Control.Apply ((<*))
 import Control.Bind (join)
-import Control.Monad (when)
 import Control.Monad.Eff (Eff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Cont.Trans (runContT)
-import Control.Monad.ST
+import Control.Monad.ST (ST, STRef, readSTRef, modifySTRef, newSTRef)
 import Control.Parallel (inParallel, runParallel)
 import DOM (DOM)
 import DOM.Event.EventTarget (eventListener, addEventListener)
@@ -23,18 +21,15 @@ import DOM.Event.Types (Event)
 import DOM.HTML (window)
 import DOM.HTML.Types (htmlDocumentToParentNode)
 import DOM.HTML.Window (document)
-import DOM.Node.Element (setAttribute)
-import DOM.Node.Node (setTextContent)
 import DOM.Node.ParentNode (querySelector)
-import DOM.Node.Types (Element(..), ElementId(..), elementToEventTarget, elementToNode)
+import DOM.Node.Types (Element, elementToEventTarget)
 import DOM.RequestAnimationFrame (requestAnimationFrame)
-import DOM.Timer (Timer, delay)
 import Graphics.Canvas as C
 import Graphics.Canvas.Free
 import Color (toHexString, rgb)
 import LifeGame (FieldSize, Field, next)
 import LifeGame.Data (gliderGun)
-import DOMUtil
+import DOMUtil (setText, enableElement, disableElement)
 
 data TimeState = Running | Stopped | Stopping
 type GameState = { timeState :: TimeState
@@ -44,7 +39,7 @@ type GameState = { timeState :: TimeState
                  , generationScore :: Maybe Element
                  , rateIndicator :: Maybe Element}
  
-main :: forall e h. Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, timer :: Timer, dom :: DOM | e) Unit
+main :: forall e h. Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, dom :: DOM | e) Unit
 main = do
   document <- htmlDocumentToParentNode <$> (window >>= document)
   gameNodes <- {timeState: Stopped, stepRate: 3, startButton:_, stopButton:_, generationScore:_, rateIndicator:_ }
@@ -54,19 +49,19 @@ main = do
                 <*> (toMaybe <$> querySelector "#rate" document)
   rateIncButton <- toMaybe <$> querySelector "#rateInc" document
   rateDecButton <- toMaybe <$> querySelector "#rateDec" document
-  state <- newSTRef gameNodes
   
-  maybe (pure unit) (setAttribute "disabled" "true") gameNodes.stopButton
+  disableElement =<<= gameNodes.stopButton
   showGeneration 0 gameNodes
   showStepRateIndicator gameNodes
   
+  state <- newSTRef gameNodes
   registerListener click (startLoop state) gameNodes.startButton
   registerListener click (stopLoop state) gameNodes.stopButton
   registerListener click (rateIncrement state) rateIncButton
   registerListener click (rateDecrement state) rateDecButton
   
   where
-    registerListener event listener = maybe (pure unit) (addEventListener event (eventListener listener) true <<< elementToEventTarget) 
+    registerListener event listener = (=<<=) (addEventListener event (eventListener listener) true <<< elementToEventTarget) 
 
 rateIncrement :: forall e h. STRef h GameState -> Event -> Eff (st :: ST h, dom :: DOM | e) Unit
 rateIncrement state _ = do
@@ -85,8 +80,8 @@ stopLoop state _ = do
   case gameState.timeState of
     Running -> void $ do
       modifySTRef state \g -> g { timeState=Stopping }
-      maybe (pure unit) (removeAttribute "disabled") gameState.startButton
-      maybe (pure unit) (setAttribute "disabled" "true") gameState.stopButton
+      enableElement =<<= gameState.startButton
+      disableElement =<<= gameState.stopButton
     _ -> pure unit
 
 startLoop :: forall e h. STRef h GameState -> Event -> Eff (st :: ST h, console :: CONSOLE, canvas :: C.Canvas, dom :: DOM | e) Unit
@@ -97,15 +92,19 @@ startLoop state _ = do
     startLoop' gs@{timeState: Stopped} = do
       modifySTRef state \g -> g { timeState=Running }
       
-      maybe (pure unit) (setAttribute "disabled" "true") gs.startButton
-      maybe (pure unit) (removeAttribute "disabled") gs.stopButton
+      disableElement =<<= gs.startButton
+      enableElement =<<= gs.stopButton
       
-      Just canvas <- C.getCanvasElementById "canvas"
+      C.getCanvasElementById "canvas" >>= mainLoop
+    startLoop' _ = pure unit
+    
+    mainLoop Nothing       = pure unit
+    mainLoop (Just canvas) = do
       ctx <- C.getContext2D canvas
       dimensions <- C.getCanvasDimensions canvas
       let initialField = concat [gliderGun, gliderGun]
           size = { height: length initialField
-                , width: fromMaybe 0 $ length <$> head initialField}
+                 , width: fromMaybe 0 $ length <$> head initialField}
           cellSize = max (toNumber $ size.height) (toNumber size.width)
           cellRect = {x: 0.0, y: 0.0, w: dimensions.width / cellSize, h: dimensions.height / cellSize}
           ranges = chunks 2 $ 0..(size.height - 1)
@@ -124,11 +123,11 @@ startLoop state _ = do
               loop' _ = pure unit
               delayFrame frameNum = foldl (<<<) requestAnimationFrame $ replicate frameNum requestAnimationFrame
       loop 0 initialField
-    startLoop' _ = pure unit
 
+--
 -- GUI
-
-drawCells :: forall e. C.Rectangle -> FieldSize -> Field -> Graphics Unit
+--
+drawCells :: C.Rectangle -> FieldSize -> Field -> Graphics Unit
 drawCells  cellRect size field =
   sequence_ $ join $ zipWith (\row cols -> zipWith (draw row) (0..size.width) cols) (0..size.height) field
   where
@@ -140,14 +139,22 @@ drawCells  cellRect size field =
     color age = rgb (255 - age) age 140 # toHexString # setFillStyle
 
 showStepRateIndicator :: forall e. GameState -> Eff (dom :: DOM | e) Unit
-showStepRateIndicator gs = setText ("step forward per " ++ show gs.stepRate ++ " frame") gs.rateIndicator
+showStepRateIndicator gs = setText ("step forward per " ++ show gs.stepRate ++ " frame") =<<= gs.rateIndicator
 
 showGeneration :: forall e. Int -> GameState -> Eff (dom :: DOM | e) Unit
-showGeneration generation gs = setText (show generation ++ " Generation") gs.generationScore
+showGeneration generation gs = setText (show generation ++ " Generation") =<<= gs.generationScore
 
+--
+-- Utils
+--
 chunks :: forall a. Int -> Array a -> Array (Array a)
 chunks 0 arr = []
 chunks 1 arr = [arr]
 chunks i arr = chunks' (length arr / i) arr where
   chunks' i [] = []
   chunks' i l  = take i l : chunks' i (drop i l)
+
+infixl 9 =<<=
+(=<<=) :: forall a b f. (Applicative f) => (a -> f b) -> Maybe a -> f Unit
+(=<<=) f (Just a) = void $ f a
+(=<<=) _ Nothing = pure unit
